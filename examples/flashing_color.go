@@ -9,43 +9,27 @@ import (
 
 func main() {
 	fmt.Printf("\n=================\n= GoGoGameSense =\n=================\n\n")
-	fmt.Printf("This example will set the colour of a Rival mouse's logo to red\n\n")
+	fmt.Printf("This example will set the colour of a Rival mouse's logo to flashing red\n\n")
 
-	gs, err := gogogamesense.NewWithEndpoint("http://192.168.88.161:49738/")
+	gs, err := gogogamesense.New()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(0)
 	}
 
 	metadata := gogogamesense.GameMetadata{
-		Name:        "MINE001",
-		DisplayName: "Minesweeper",
-		Developer:   "CodeBoy",
+		Name:                "DONOTEST",
+		DisplayName:         "DonoTest",
+		Developer:           "CodeBoy",
+		DeInitializeTimerMS: 5000,
 	}
+
 	_ = gs
 	_ = metadata
-	// err = gs.RegisterGame(metadata)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// 	os.Exit(0)
-	// }
-
-	gs.GameName = "TEST001"
-	// event := gogogamesense.GameEvent{
-	// 	Name: "TestEvent",
-	// 	Handlers: []gogogamesense.GameHandler{
-	// 		gogogamesense.GameHandler{
-	// 			DeviceType: gogogamesense.DeviceTypeRGB2Zone,
-	// 			Zone:       gogogamesense.DeviceZoneMouseLogo,
-	// 			Mode:       gogogamesense.ModeColor,
-	// 			Color: gogogamesense.SingleColor{
-	// 				Red:   255,
-	// 				Green: 0,
-	// 				Blue:  128,
-	// 			},
-	// 		},
-	// 	},
-	// }
+	err = gs.RegisterGame(metadata)
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	event := gogogamesense.GameEventBinding{
 		Name:   "HEALTH",
@@ -60,7 +44,7 @@ func main() {
 						gogogamesense.RangeFrequency{
 							Low:            0,
 							High:           10,
-							BlinkPerSecond: 5,
+							BlinkPerSecond: 2,
 						},
 					},
 				},
@@ -69,8 +53,8 @@ func main() {
 						Low:  0,
 						High: 10,
 						Color: gogogamesense.SingleColor{
-							Red:   255,
-							Green: 0,
+							Red:   180,
+							Green: 50,
 							Blue:  0,
 						},
 					},
@@ -99,7 +83,21 @@ func main() {
 
 	err = gs.BindGameEvent(event)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
 
+	err = gs.SendGameEvent(gogogamesense.GameEvent{
+		Name: "HEALTH",
+		Data: gogogamesense.GameEventData{
+			Value: 5,
+		},
+	})
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = gs.DeregisterGame()
+	if err != nil {
+		fmt.Println(err)
+	}
 }

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -32,8 +34,20 @@ const (
 // It will attempt to find the SteelSeries JSON API endpoint and return an
 // error if it was not possible
 func New() (*GoGoGameSense, error) {
+	corePropsPath := filepath.Join(os.Getenv("PROGRAMDATA"), "SteelSeries", "SteelSeries Engine 3", "coreProps.json")
+	corePropsContent, err := ioutil.ReadFile(corePropsPath)
+	if err != nil {
+		return nil, fmt.Errorf("SteelSeries Engine 3 not running or not installed: %s", err)
+	}
+	var coreProps CoreProps
+	err = json.Unmarshal(corePropsContent, &coreProps)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to parse SteelSeries Engine 3 Core Props: %s", err)
+	}
+
 	return &GoGoGameSense{
-		client: createHTTPClient(),
+		APIEndpoint: coreProps.Address,
+		client:      createHTTPClient(),
 	}, nil
 }
 
@@ -85,15 +99,11 @@ func (gs *GoGoGameSense) RegisterGame(metadata GameMetadata) error {
 }
 
 // DeregisterGame removes your game from the SteelSeries engine
-func (gs *GoGoGameSense) DeregisterGame(metadata GameMetadata) error {
-	gs.GameName = strings.TrimSpace(metadata.Name)
-	if gs.IsAllowedGameOrEventName(gs.GameName) == false {
-		return fmt.Errorf(
-			"The game name may only contain uppercase letters, 0-9, hyphens or underscores",
-		)
-	}
+func (gs *GoGoGameSense) DeregisterGame() error {
 
-	gs.GameName = metadata.Name
+	metadata := GameMetadata{
+		Name: gs.GameName,
+	}
 	err := gs.call("remove_game", metadata)
 
 	return err
@@ -168,11 +178,8 @@ func (gs *GoGoGameSense) call(endpoint string, payloadObject interface{}) error 
 	if err != nil {
 		return err
 	}
-	callEndpoint := fmt.Sprintf("%s/%s", gs.APIEndpoint, endpoint)
-	fmt.Println("Call", callEndpoint)
 
-	fmt.Println(string(payload))
-
+	callEndpoint := fmt.Sprintf("http://%s/%s", gs.APIEndpoint, endpoint)
 	req, err := http.NewRequest("POST", callEndpoint, bytes.NewBuffer(payload))
 	if err != nil {
 		return fmt.Errorf("Unable to create API request '%s': %s", endpoint, err)
@@ -189,7 +196,14 @@ func (gs *GoGoGameSense) call(endpoint string, payloadObject interface{}) error 
 	}
 	defer response.Body.Close()
 
-	fmt.Println(responseContent)
+	if response.StatusCode == http.StatusOK {
+		return nil
+	}
 
-	return nil
+	var apiError APIError
+	err = json.Unmarshal(responseContent, &apiError)
+	if err != nil {
+		return fmt.Errorf("Unable to read API error information: %s. Content %s.", err, string(responseContent))
+	}
+	return fmt.Errorf("Error %s: %s", response.Status, apiError.Error)
 }
