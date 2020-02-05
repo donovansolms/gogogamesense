@@ -1,0 +1,19 @@
+Bind events
+http://127.0.0.1:<port>/bind_game_event
+
+{
+  "game": "TEST_GAME",
+  "event": "HEALTH",
+  "handlers": [
+    {
+      "device-type": "rgb-2-zone",
+      "zone": "logo",
+      "color": {
+        "red": 255,
+        "green": 0,
+        "blue": 255
+      },
+      "mode": "color"
+    }
+  ]
+}

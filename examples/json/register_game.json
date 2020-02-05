@@ -1,0 +1,8 @@
+Register game
+http://127.0.0.1:<port>/game_metadata
+
+{
+  "game": "TEST_GAME",
+  "game_display_name": "My testing game",
+  "developer": "My Game Studios"
+}

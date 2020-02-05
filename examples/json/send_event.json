@@ -1,0 +1,10 @@
+Send events
+http://127.0.0.1:<port>/game_event
+
+{
+  "game": "TEST_GAME",
+  "event": "HEALTH",
+  "data": {
+      "value": 75
+  }
+}

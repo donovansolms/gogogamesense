@@ -1,27 +1,40 @@
 package gogogamesense
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"regexp"
 	"strings"
+	"time"
 )
 
-// GoGoGameSense implements the JSON API for the SteelSeries GameSense Engine
+// GoGoGameSense implements the JSON API for the SteelSeries Engine 3
+// GameSense service
 type GoGoGameSense struct {
-	// gameName holds the name of the game for API calls
-	gameName string
-	// apiURL specifies the SteelSeries JSON API Endpoint
-	apiEndpoint string
+	// GameName holds the name of the game for API calls
+	GameName string
+	// APIEndpoint specifies the SteelSeries JSON API Endpoint
+	APIEndpoint string
+	// client is the HTTP client used to communicate with the API
+	client *http.Client
 }
+
+const (
+	// requestTimeoutSeconds is the waiting time for an API response
+	requestTimeoutSeconds int = 2
+)
 
 // New creates a new instance of the GoGoGameSense client.
 //
 // It will attempt to find the SteelSeries JSON API endpoint and return an
 // error if it was not possible
 func New() (*GoGoGameSense, error) {
-
-	return &GoGoGameSense{}, nil
+	return &GoGoGameSense{
+		client: createHTTPClient(),
+	}, nil
 }
 
 // NewWithEndpoint creates a new instance of the GoGoGameSense client.
@@ -33,8 +46,17 @@ func NewWithEndpoint(apiEndpoint string) (*GoGoGameSense, error) {
 	// Remove trailing slash
 	apiEndpoint = strings.TrimSuffix(apiEndpoint, "/")
 	return &GoGoGameSense{
-		apiEndpoint: apiEndpoint,
+		APIEndpoint: apiEndpoint,
+		client:      createHTTPClient(),
 	}, nil
+}
+
+// createHTTPClient creates a new HTTP client
+func createHTTPClient() *http.Client {
+	client := &http.Client{
+		Timeout: time.Duration(requestTimeoutSeconds) * time.Second,
+	}
+	return client
 }
 
 // RegisterGame registers your game with the SteelSeries engine
@@ -49,16 +71,83 @@ func (gs *GoGoGameSense) RegisterGame(metadata GameMetadata) error {
 		return fmt.Errorf("DeInitializeTimerMS must be between 1000 and 60000")
 	}
 
-	gs.gameName = strings.TrimSpace(gs.gameName)
-	if gs.IsAllowedGameOrEventName(gs.gameName) == false {
+	gs.GameName = strings.TrimSpace(metadata.Name)
+	if gs.IsAllowedGameOrEventName(gs.GameName) == false {
 		return fmt.Errorf(
 			"The game name may only contain uppercase letters, 0-9, hyphens or underscores",
 		)
 	}
 
-	gs.gameName = metadata.Name
+	gs.GameName = metadata.Name
 	err := gs.call("game_metadata", metadata)
 
+	return err
+}
+
+// DeregisterGame removes your game from the SteelSeries engine
+func (gs *GoGoGameSense) DeregisterGame(metadata GameMetadata) error {
+	gs.GameName = strings.TrimSpace(metadata.Name)
+	if gs.IsAllowedGameOrEventName(gs.GameName) == false {
+		return fmt.Errorf(
+			"The game name may only contain uppercase letters, 0-9, hyphens or underscores",
+		)
+	}
+
+	gs.GameName = metadata.Name
+	err := gs.call("remove_game", metadata)
+
+	return err
+}
+
+// BindGameEvent creates a new game event the engine will react to
+func (gs *GoGoGameSense) BindGameEvent(binding GameEventBinding) error {
+	binding.GameName = gs.GameName
+	if gs.IsAllowedGameOrEventName(binding.Name) == false {
+		return fmt.Errorf(
+			"The event name may only contain uppercase letters, 0-9, hyphens or underscores",
+		)
+	}
+
+	err := gs.call("bind_game_event", binding)
+
+	return err
+}
+
+// UnbindGameEvent removes an existing game event
+func (gs *GoGoGameSense) UnbindGameEvent(binding GameEventBinding) error {
+	binding.GameName = gs.GameName
+	if gs.IsAllowedGameOrEventName(binding.Name) == false {
+		return fmt.Errorf(
+			"The event name may only contain uppercase letters, 0-9, hyphens or underscores",
+		)
+	}
+
+	err := gs.call("remove_game_event", binding)
+
+	return err
+}
+
+// SendGameEvent sends the event to the SteelSeries engine
+func (gs *GoGoGameSense) SendGameEvent(event GameEvent) error {
+
+	event.GameName = gs.GameName
+	if gs.IsAllowedGameOrEventName(event.Name) == false {
+		return fmt.Errorf(
+			"The event name may only contain uppercase letters, 0-9, hyphens or underscores",
+		)
+	}
+
+	err := gs.call("game_event", event)
+
+	return err
+}
+
+// SendHeartbeat sends the keep-alive signal to the engine
+func (gs *GoGoGameSense) SendHeartbeat() error {
+	heartbeat := GameHeartbeat{
+		GameName: gs.GameName,
+	}
+	err := gs.call("game_heartbeat", heartbeat)
 	return err
 }
 
@@ -66,6 +155,9 @@ func (gs *GoGoGameSense) RegisterGame(metadata GameMetadata) error {
 // rules of game and event names are limited to the following characters:
 // Uppercase A-Z, the digits 0-9, hyphen, and underscore.
 func (gs *GoGoGameSense) IsAllowedGameOrEventName(name string) bool {
+	if strings.TrimSpace(name) == "" {
+		return false
+	}
 	var isAllowed = regexp.MustCompile(`^[A-Z0-9_-]*$`).MatchString
 	return isAllowed(name)
 }
@@ -76,7 +168,28 @@ func (gs *GoGoGameSense) call(endpoint string, payloadObject interface{}) error 
 	if err != nil {
 		return err
 	}
+	callEndpoint := fmt.Sprintf("%s/%s", gs.APIEndpoint, endpoint)
+	fmt.Println("Call", callEndpoint)
+
 	fmt.Println(string(payload))
+
+	req, err := http.NewRequest("POST", callEndpoint, bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("Unable to create API request '%s': %s", endpoint, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	response, err := gs.client.Do(req)
+	if err != nil && response == nil {
+		return fmt.Errorf("Unable to call API '%s': %s", endpoint, err)
+	}
+	responseContent, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("Unable to read API response: %s", err)
+	}
+	defer response.Body.Close()
+
+	fmt.Println(responseContent)
 
 	return nil
 }

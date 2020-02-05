@@ -1,0 +1,7 @@
+Heartbeat
+http://127.0.0.1:<port>/game_heartbeat
+
+
+{
+  "game": "TEST_GAME"
+}
